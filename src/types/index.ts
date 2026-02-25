@@ -1,164 +1,75 @@
-// User types
+/**
+ * Habit Tracker - TypeScript Types
+ * Central type definitions for the application
+ */
+
+// User types from Vibexe SDK
 export interface User {
-  uid: string;
-  email: string | null;
-  displayName: string | null;
-  photoURL: string | null;
-  createdAt: Date;
-  lastLoginAt: Date;
-  plan: 'free' | 'pro' | 'enterprise';
-  scansRemaining: number;
-  scansThisMonth: number;
-}
-
-// Scan types
-export type ScanType = 'url' | 'code' | 'file';
-export type ScanStatus = 'pending' | 'scanning' | 'analyzing' | 'completed' | 'failed';
-
-export interface ScanInput {
-  type: ScanType;
-  url?: string;
-  code?: string;
-  fileName?: string;
-  fileContent?: string;
-  language?: string;
-}
-
-export interface Scan {
   id: string;
-  userId: string;
-  type: ScanType;
-  input: ScanInput;
-  status: ScanStatus;
-  createdAt: Date;
-  completedAt?: Date;
-  report?: ScanReport;
-  error?: string;
+  email: string;
+  display_name: string;
+  role: string;
+  email_verified: boolean;
+  auth_provider: string;
+  avatar_url: string | null;
+  created_at: string;
 }
 
-// Vulnerability types
-export type VulnerabilitySeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
+// App-specific types
+export type HabitColor = 'blue' | 'green' | 'purple' | 'orange' | 'pink';
 
-export type VulnerabilityCategory =
-  | 'XSS'
-  | 'INJECTION'
-  | 'AUTHENTICATION'
-  | 'AUTHORIZATION'
-  | 'CRYPTOGRAPHY'
-  | 'DATA_EXPOSURE'
-  | 'CONFIGURATION'
-  | 'DEPENDENCIES'
-  | 'CSRF'
-  | 'CORS'
-  | 'HEADERS'
-  | 'INPUT_VALIDATION'
-  | 'SESSION'
-  | 'OTHER';
-
-export interface Vulnerability {
+export interface Habit {
   id: string;
-  title: string;
-  description: string;
-  severity: VulnerabilitySeverity;
-  category: VulnerabilityCategory;
-  location: {
-    file?: string;
-    line?: number;
-    column?: number;
-    snippet?: string;
-  };
-  cwe?: string;
-  owasp?: string;
-  cvss?: number;
-  impact: string;
-  remediation: string;
-  codeExample?: {
-    vulnerable: string;
-    fixed: string;
-  };
-  references: string[];
-}
-
-// Report types
-export interface SecurityScore {
-  overall: number; // 0-100
-  breakdown: {
-    xss: number;
-    injection: number;
-    authentication: number;
-    dataExposure: number;
-    configuration: number;
-    dependencies: number;
-  };
-  grade: 'A+' | 'A' | 'B' | 'C' | 'D' | 'F';
-}
-
-export interface ScanReport {
-  id: string;
-  scanId: string;
-  generatedAt: Date;
-  score: SecurityScore;
-  summary: {
-    total: number;
-    critical: number;
-    high: number;
-    medium: number;
-    low: number;
-    info: number;
-  };
-  vulnerabilities: Vulnerability[];
-  scannedResources: {
-    url?: string;
-    files: string[];
-    linesOfCode: number;
-  };
-  recommendations: string[];
-  headers?: HeaderAnalysis;
-  dependencies?: DependencyAnalysis[];
-}
-
-export interface HeaderAnalysis {
-  present: string[];
-  missing: string[];
-  misconfigured: {
-    header: string;
-    issue: string;
-    recommendation: string;
-  }[];
-}
-
-export interface DependencyAnalysis {
   name: string;
-  version: string;
-  latestVersion?: string;
-  vulnerabilities: {
-    id: string;
-    severity: VulnerabilitySeverity;
-    title: string;
-  }[];
+  color: HabitColor;
+  user_id: string;
+  created_at: string;
+  updated_at: string;
 }
 
-// API types
-export interface ApiResponse<T> {
-  success: boolean;
-  data?: T;
-  error?: {
-    code: string;
-    message: string;
-  };
+export interface HabitCompletion {
+  id: string;
+  habit_id: string;
+  completed_date: string; // ISO date string (midnight normalized)
+  user_id: string;
+  created_at: string;
 }
 
-export interface ScanRequest {
-  type: ScanType;
-  url?: string;
-  code?: string;
-  language?: string;
-  fileName?: string;
+export interface HabitWithCompletions extends Habit {
+  completions: HabitCompletion[];
 }
 
-// Rate limiting
-export interface RateLimitInfo {
-  remaining: number;
-  reset: Date;
-  limit: number;
+export interface WeekDay {
+  date: Date;
+  isCompleted: boolean;
+  isToday: boolean;
+  dayLabel: string;
 }
+
+export interface WeeklyProgress {
+  days: WeekDay[];
+  completionsCount: number;
+  streak: number;
+}
+
+export type AuthView = 'signup' | 'signin';
+
+export interface AuthError {
+  field?: string;
+  message: string;
+}
+
+export interface ValidationError {
+  field: string;
+  message: string;
+}
+
+export const HABIT_COLORS: { name: HabitColor; class: string; bgClass: string }[] = [
+  { name: 'blue', class: 'text-blue-500', bgClass: 'bg-blue-500' },
+  { name: 'green', class: 'text-green-500', bgClass: 'bg-green-500' },
+  { name: 'purple', class: 'text-purple-500', bgClass: 'bg-purple-500' },
+  { name: 'orange', class: 'text-orange-500', bgClass: 'bg-orange-500' },
+  { name: 'pink', class: 'text-pink-500', bgClass: 'bg-pink-500' },
+];
+
+export const DEFAULT_HABIT_COLOR: HabitColor = 'blue';

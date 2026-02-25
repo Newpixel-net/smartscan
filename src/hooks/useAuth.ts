@@ -1,237 +1,117 @@
-'use client';
+/**
+ * Authentication hook
+ * Manages user authentication state and operations
+ */
 
-import { useState, useEffect, useCallback } from 'react';
-import {
-  User,
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  signOut as firebaseSignOut,
-  sendPasswordResetEmail,
-  onAuthStateChanged,
-  updateProfile,
-  sendEmailVerification,
-  Auth,
-} from 'firebase/auth';
-import { doc, setDoc, getDoc, serverTimestamp, Firestore } from 'firebase/firestore';
-import { getFirebaseAuth, getFirebaseDb } from '@/lib/firebase';
-import { emailSchema, passwordSchema } from '@/utils/security';
+import { useState, useEffect, useCallback, createContext, useContext } from 'react';
+import { VibexeApp } from '@vibexe/sdk';
+import { User, AuthView } from '../types';
 
-interface AuthState {
+const app = new VibexeApp({ appId: 'bldr_fcjZ7dIk2Ahq3xsZbHJhW' });
+
+interface AuthContextType {
   user: User | null;
   loading: boolean;
   error: string | null;
+  currentView: AuthView;
+  signUp: (email: string, password: string, displayName: string) => Promise<void>;
+  signIn: (email: string, password: string) => Promise<void>;
+  signOut: () => Promise<void>;
+  setCurrentView: (view: AuthView) => void;
+  isAuthenticated: boolean;
 }
 
-interface UserProfile {
-  uid: string;
-  email: string | null;
-  displayName: string | null;
-  plan: 'free' | 'pro' | 'enterprise';
-  scansRemaining: number;
-  scansThisMonth: number;
-  createdAt: Date;
-}
+const AuthContext = createContext<AuthContextType | null>(null);
 
-export function useAuth() {
-  const [state, setState] = useState<AuthState>({
-    user: null,
-    loading: true,
-    error: null,
-  });
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [currentView, setCurrentView] = useState<AuthView>('signup');
 
-  // Listen to auth state changes
+  // Check for existing session on mount
   useEffect(() => {
-    const auth = getFirebaseAuth();
-
-    if (!auth) {
-      // Firebase not initialized (missing config)
-      setState({ user: null, loading: false, error: null });
-      return;
-    }
-
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setState((prev) => ({ ...prev, user, loading: false }));
-
-      if (user) {
-        const db = getFirebaseDb();
-        if (db) {
-          // Fetch user profile from Firestore
-          try {
-            const userDoc = await getDoc(doc(db, 'users', user.uid));
-            if (userDoc.exists()) {
-              setUserProfile(userDoc.data() as UserProfile);
-            }
-          } catch (err) {
-            console.error('Error fetching user profile:', err);
-          }
-        }
-      } else {
-        setUserProfile(null);
-      }
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  // Sign up with email and password
-  const signUp = useCallback(
-    async (email: string, password: string, displayName?: string) => {
-      const auth = getFirebaseAuth();
-      const db = getFirebaseDb();
-
-      if (!auth || !db) {
-        return { success: false, error: 'Firebase not configured' };
-      }
-
-      setState((prev) => ({ ...prev, loading: true, error: null }));
-
+    const checkSession = async () => {
       try {
-        // Validate inputs
-        const validatedEmail = emailSchema.parse(email);
-        passwordSchema.parse(password);
-
-        // Create user
-        const { user } = await createUserWithEmailAndPassword(auth, validatedEmail, password);
-
-        // Update profile with display name
-        if (displayName) {
-          await updateProfile(user, { displayName });
+        const currentUser = await app.auth.getCurrentUser();
+        if (currentUser) {
+          setUser(currentUser as unknown as User);
         }
-
-        // Send email verification
-        await sendEmailVerification(user);
-
-        // Create user document in Firestore
-        await setDoc(doc(db, 'users', user.uid), {
-          uid: user.uid,
-          email: validatedEmail,
-          displayName: displayName || null,
-          plan: 'free',
-          scansRemaining: 3, // Free tier: 3 scans per month
-          scansThisMonth: 0,
-          createdAt: serverTimestamp(),
-          lastLoginAt: serverTimestamp(),
-        });
-
-        setState((prev) => ({ ...prev, loading: false }));
-        return { success: true, user };
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : 'Sign up failed';
-        setState((prev) => ({ ...prev, loading: false, error: message }));
-        return { success: false, error: message };
+      } catch (err) {
+        // Session expired or invalid, user stays logged out
+      } finally {
+        setLoading(false);
       }
-    },
-    []
-  );
+    };
 
-  // Sign in with email and password
+    checkSession();
+  }, []);
+
+  const signUp = useCallback(async (email: string, password: string, displayName: string) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const response = await app.auth.signUp({ email, password, displayName });
+      setUser(response.user as unknown as User);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to sign up');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   const signIn = useCallback(async (email: string, password: string) => {
-    const auth = getFirebaseAuth();
-    const db = getFirebaseDb();
-
-    if (!auth) {
-      return { success: false, error: 'Firebase not configured' };
-    }
-
-    setState((prev) => ({ ...prev, loading: true, error: null }));
-
     try {
-      // Validate email format
-      const validatedEmail = emailSchema.parse(email);
-
-      const { user } = await signInWithEmailAndPassword(auth, validatedEmail, password);
-
-      // Update last login
-      if (db) {
-        await setDoc(
-          doc(db, 'users', user.uid),
-          { lastLoginAt: serverTimestamp() },
-          { merge: true }
-        );
-      }
-
-      setState((prev) => ({ ...prev, loading: false }));
-      return { success: true, user };
-    } catch (err: unknown) {
-      let message = 'Sign in failed';
-      if (err instanceof Error) {
-        // Map Firebase error codes to user-friendly messages
-        if (err.message.includes('auth/invalid-credential')) {
-          message = 'Invalid email or password';
-        } else if (err.message.includes('auth/too-many-requests')) {
-          message = 'Too many failed attempts. Please try again later.';
-        } else if (err.message.includes('auth/user-disabled')) {
-          message = 'This account has been disabled';
-        } else {
-          message = err.message;
-        }
-      }
-      setState((prev) => ({ ...prev, loading: false, error: message }));
-      return { success: false, error: message };
+      setLoading(true);
+      setError(null);
+      
+      const response = await app.auth.signIn({ email, password });
+      setUser(response.user as unknown as User);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to sign in');
+      throw err;
+    } finally {
+      setLoading(false);
     }
   }, []);
 
-  // Sign out
   const signOut = useCallback(async () => {
-    const auth = getFirebaseAuth();
-
-    if (!auth) {
-      return { success: false, error: 'Firebase not configured' };
-    }
-
-    setState((prev) => ({ ...prev, loading: true, error: null }));
-
     try {
-      await firebaseSignOut(auth);
-      setState({ user: null, loading: false, error: null });
-      setUserProfile(null);
-      return { success: true };
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Sign out failed';
-      setState((prev) => ({ ...prev, loading: false, error: message }));
-      return { success: false, error: message };
+      setLoading(true);
+      await app.auth.signOut();
+      setUser(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to sign out');
+    } finally {
+      setLoading(false);
     }
   }, []);
 
-  // Reset password
-  const resetPassword = useCallback(async (email: string) => {
-    const auth = getFirebaseAuth();
-
-    if (!auth) {
-      return { success: false, error: 'Firebase not configured' };
-    }
-
-    setState((prev) => ({ ...prev, loading: true, error: null }));
-
-    try {
-      const validatedEmail = emailSchema.parse(email);
-      await sendPasswordResetEmail(auth, validatedEmail);
-      setState((prev) => ({ ...prev, loading: false }));
-      return { success: true };
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Password reset failed';
-      setState((prev) => ({ ...prev, loading: false, error: message }));
-      return { success: false, error: message };
-    }
-  }, []);
-
-  // Clear error
-  const clearError = useCallback(() => {
-    setState((prev) => ({ ...prev, error: null }));
-  }, []);
-
-  return {
-    user: state.user,
-    userProfile,
-    loading: state.loading,
-    error: state.error,
+  const value: AuthContextType = {
+    user,
+    loading,
+    error,
+    currentView,
     signUp,
     signIn,
     signOut,
-    resetPassword,
-    clearError,
-    isAuthenticated: !!state.user,
-    isEmailVerified: state.user?.emailVerified ?? false,
+    setCurrentView,
+    isAuthenticated: !!user,
   };
+
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export function useAuth() {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
 }
